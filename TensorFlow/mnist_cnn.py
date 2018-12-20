@@ -8,11 +8,59 @@ import tensorflow as tf
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
+def main(unused_argv):
+    # Load training and evaluating data
+    mnist         = tf.contrib.learn.datasets.load_dataset("mnist")
+    train_data    = mnist.train.images
+    train_labels  = np.asarray(mnist.train.labels, dtype=np.int32)
+    eval_data     = mnist.test.images
+    eval_labels   = np.asarray(mnist.train.labels, dtype=np.int32)
+
+    # Create the Estimator which is a class for performing high-level model
+    mnist_classifier = tf.estimator.Estimator(model_fn=cnn_model_fn, model_dir="./mnist_convnet_model")
+
+    # Set up logging for predictions
+    tensors_to_log = {"probabilities": "softmax_tensor"}
+    logging_hook   = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=50)
+
+    # Train the model
+    train_input_fn = tf.estimator.inputs.numpy_input_fn(
+        x          = {'x': train_data},
+        y          = train_labels,
+        batch_size = 100,
+        num_epochs = None,
+        shuffle    = True
+    )
+
+    mnist_classifier.train(
+        input_fn   = train_input_fn,
+        steps      = 20000,
+        hooks      = [logging_hook]
+    )
+
+    # Evaluate the model and print results
+    eval_input_fn  = tf.estimator.inputs.numpy_input_fn(
+        x          = {'x': eval_data},
+        y          = eval_labels,
+        num_epochs = 1,
+        shuffle    = False
+    )
+
+    eval_results   = mnist_classifier.evaluate(input_fn=eval_input_fn)
+    print(eval_results)
+
+
 def cnn_model_fn(features, labels, mode):
     # Input Layer
+    # Reshape X to 4-D tensor like [batch_size, width, height, channels]
+    # MNIST images are 28*28 pixels and only have one color channel
     input_layer = tf.reshape(features["x"], [-1, 28, 28, 1])
 
     # Convolutional Layer No.1
+    # Using 32 filters means we need to compute 32 features and each filter is 5*5 with ReLU activation
+    # Padding is added to preserve width and height
+    # Input tensor shape: [batch_size, width, height, channels]
+    # Output tensor shape: [batch_size, width, height, channels]
     conv1 = tf.layers.conv2d(
         inputs      = input_layer,
         filters     = 32,
@@ -52,7 +100,7 @@ def cnn_model_fn(features, labels, mode):
         return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
 
     # Calculate loss for both TRAIN and EVAL modes
-    loss = tf.losses.spare_softmax_cross_entropy(labels=labels, logits=logits)
+    loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=logits)
 
     # Configure the training op for TRAIN mode
     if mode == tf.estimator.ModeKeys.TRAIN:
@@ -65,6 +113,7 @@ def cnn_model_fn(features, labels, mode):
     eval_metric_ops = {"accuracy": tf.metrics.accuracy(labels=labels, predictions=predictions["classes"])}
 
     return tf.estimator.EstimatorSpec(mode=mode, loss=loss, eval_metric_ops=eval_metric_ops)
+
 
 if __name__ == "__main__":
     tf.app.run()
